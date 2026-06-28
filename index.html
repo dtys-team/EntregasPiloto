@@ -355,73 +355,47 @@
         }, 3200);
     }
 
-    function cargarDatos() {
+    async function cargarDatos() {
         const contenedor = document.getElementById('contenidoEntregas');
         const select = document.getElementById('pilotoSelect');
         const pilotoSeleccionadoPrevio = select.value;
 
         contenedor.innerHTML = '<p class="estado-msg">Cargando entregas pendientes...</p>';
 
-        // JSONP: el GET normal con fetch lo bloquea el navegador por CORS
-        // (Apps Script no manda la cabecera Access-Control-Allow-Origin).
-        // Con una etiqueta <script> esa restricción no aplica.
-        const nombreCallback = 'callbackEntregas_' + Date.now();
-        window[nombreCallback] = function(datos) {
-            delete window[nombreCallback];
-            scriptTag.remove();
-            clearTimeout(tiempoLimite);
-            procesarDatosRecibidos(datos, pilotoSeleccionadoPrevio);
-        };
+        try {
+            const response = await fetch(WEB_APP_URL, { method: 'GET' });
+            if (!response.ok) {
+                throw new Error("El servidor respondió con un error (" + response.status + ").");
+            }
+            todasLasEntregas = await response.json();
 
-        const tiempoLimite = setTimeout(() => {
-            delete window[nombreCallback];
-            if (scriptTag.parentNode) scriptTag.remove();
+            // Construir lista de pilotos únicos con entregas pendientes
+            const pilotosUnicos = [...new Set(todasLasEntregas.map(e => e.piloto))].sort();
+
+            select.innerHTML = '<option value="">-- Selecciona tu nombre --</option>';
+            pilotosUnicos.forEach(nombre => {
+                const opt = document.createElement('option');
+                opt.value = nombre;
+                opt.textContent = nombre;
+                select.appendChild(opt);
+            });
+
+            if (pilotosUnicos.length === 0) {
+                contenedor.innerHTML = '<p class="estado-msg">No hay entregas pendientes en este momento. &#127881;</p>';
+                return;
+            }
+
+            // Si ya había un piloto seleccionado y sigue en la lista, lo restauramos
+            if (pilotoSeleccionadoPrevio && pilotosUnicos.includes(pilotoSeleccionadoPrevio)) {
+                select.value = pilotoSeleccionadoPrevio;
+                mostrarEntregasPiloto();
+            } else {
+                contenedor.innerHTML = '<p class="estado-msg">Selecciona tu nombre para ver tus entregas pendientes.</p>';
+            }
+
+        } catch (error) {
+            console.error(error);
             contenedor.innerHTML = '<p class="estado-msg error">No se pudo cargar la lista. Verifica tu conexión e intenta de nuevo.</p>';
-        }, 12000);
-
-        const scriptTag = document.createElement('script');
-        scriptTag.src = WEB_APP_URL + '?callback=' + nombreCallback;
-        scriptTag.onerror = function() {
-            clearTimeout(tiempoLimite);
-            delete window[nombreCallback];
-            contenedor.innerHTML = '<p class="estado-msg error">No se pudo cargar la lista. Verifica tu conexión e intenta de nuevo.</p>';
-        };
-        document.body.appendChild(scriptTag);
-    }
-
-    function procesarDatosRecibidos(datos, pilotoSeleccionadoPrevio) {
-        const contenedor = document.getElementById('contenidoEntregas');
-        const select = document.getElementById('pilotoSelect');
-
-        if (datos && datos.status === "error") {
-            contenedor.innerHTML = '<p class="estado-msg error">Error del servidor: ' + datos.message + '</p>';
-            return;
-        }
-
-        todasLasEntregas = datos;
-
-        // Construir lista de pilotos únicos con entregas pendientes
-        const pilotosUnicos = [...new Set(todasLasEntregas.map(e => e.piloto))].sort();
-
-        select.innerHTML = '<option value="">-- Selecciona tu nombre --</option>';
-        pilotosUnicos.forEach(nombre => {
-            const opt = document.createElement('option');
-            opt.value = nombre;
-            opt.textContent = nombre;
-            select.appendChild(opt);
-        });
-
-        if (pilotosUnicos.length === 0) {
-            contenedor.innerHTML = '<p class="estado-msg">No hay entregas pendientes en este momento. &#127881;</p>';
-            return;
-        }
-
-        // Si ya había un piloto seleccionado y sigue en la lista, lo restauramos
-        if (pilotoSeleccionadoPrevio && pilotosUnicos.includes(pilotoSeleccionadoPrevio)) {
-            select.value = pilotoSeleccionadoPrevio;
-            mostrarEntregasPiloto();
-        } else {
-            contenedor.innerHTML = '<p class="estado-msg">Selecciona tu nombre para ver tus entregas pendientes.</p>';
         }
     }
 
